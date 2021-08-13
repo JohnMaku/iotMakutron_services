@@ -1,0 +1,116 @@
+version: "3.8"
+
+volumes:
+  vol-emqx-data:
+    name: foo-emqx-data
+#   vol-emqx-etc:
+#     name: foo-emqx-etc
+  vol-emqx-log:
+    name: foo-emqx-log
+
+
+
+services:
+  mongo:
+    container_name: mongo
+    image: mongo:4.4
+    restart: always
+    environment:
+      TZ: "${TZ}" # Para sincronizar las horas.
+      MONGO_INITDB_ROOT_USERNAME: "${MONGO_USERNAME}"
+      MONGO_INITDB_ROOT_PASSWORD: "${MONGO_PASSWORD}"
+    volumes:
+      - ./mongodata:/data/db #Backup en este directorio (./) crea la carpeta (mongodata) y guarda
+      # los datos de este contenedor de la ruta (/data/db) 
+
+    ports:
+      - ${MONGO_EXT_PORT}:27017 #Puerto de comunicacion local.
+
+  emqx:
+    container_name: emqx
+    image: emqx/emqx:4.2.3
+    restart: always
+    ports:
+      - 18083:18083 #Para conectarse al dashboard de emqx.
+#      - 18084:18084 #Para conectarse al dashboard con ssl de emqx con seguridad.
+      - 1883:1883
+      - 8883:8883
+      - 8083:8083 #Si hago una pagina y se debe conectar a emqx por Web Socked este es el inseguro.
+ #     - 8084:8084 
+      - 8085:8081
+      
+
+    volumes: # Se declaran especie de discos duros para salvar valores y recuperarlos si se daña
+    # el contenedor.
+      - vol-emqx-data:/opt/emqx/data
+    #   - vol-emqx-etc:/opt/emqx/etc
+      - vol-emqx-log:/opt/emqx/log
+
+    links:
+      - mongo # Habilita la comunicacion con la base de datos mongo.
+
+    extra_hosts:
+      - "localhost:192.168.42.5"
+
+    environment: # Todas estas variables de entorno solo se actualizan cuando no hay los volumes
+    # de backup, si se destruye el contenedor, al reconstruir el contenedor 
+    # toma los datos de los volumes y las lineas dentro de environment se ignoran.  
+# Para poder salvar los datos de mi emqx debo configurar las dos instr siguientes
+
+      EMQX_NAME: IotMakutron # El nombre que aparese en el dashboard
+      EMQX_HOST: 127.0.0.1 # indica que es en este mismo equipo.
+
+      TZ: "${TZ}" # Para sincronizar las horas.
+
+      # DEFAULT DASH PASS
+      EMQX_DASHBOARD__DEFAULT_USER__PASSWORD: "${EMQX_DEFAULT_USER_PASSWORD}" # Para cambiar el PW del dashboard.
+
+      # DEFAULT APP SECRET Se cambia la contraseña de la app para dar mas seguridad
+      EMQX_MANAGEMENT__DEFAULT_APPLICATION__SECRET: "${EMQX_DEFAULT_APPLICATION_SECRET}" #
+
+      EMQX_ALLOW_ANONYMOUS: "false" #Indica que en la fase de desarrollo permite accseso sin
+      # verificar credenciales si es true.
+
+      EMQX_NOMATCH: "deny" # Si es allow permite que cualquier cliente se conecte acualquier topico o transmitir
+
+      # MONGO CONNECTION
+      EMQX_AUTH__MONGO__TYPE: single
+      EMQX_AUTH__MONGO__TOPOLOGY__POOL_SIZE: 1
+      EMQX_AUTH__MONGO__TOPOLOGY__MAX_OVERFLOW: 0
+
+      EMQX_AUTH__MONGO__SERVER: "mongo:${MONGO_EXT_PORT}" #Indica la direccion de mongo y el puerto (27017).
+      EMQX_AUTH__MONGO__POOL: 8 # Numero de conexiones paralelas posibles con mongo.
+
+      EMQX_AUTH__MONGO__LOGIN: "${MONGO_USERNAME}" # Usuario para que emqx se pueda conectar con mongo.
+      EMQX_AUTH__MONGO__PASSWORD: "${MONGO_PASSWORD}" # PW para que emqx se pueda conectar con mongo.
+      EMQX_AUTH__MONGO__AUTH_SOURCE: admin # Indica la base donde se administran los usuarios que
+                                           #pueden accesar a mongo.
+
+      EMQX_AUTH__MONGO__DATABASE: "iotgl" #Especifica la base que emqx va a consultar.
+      EMQX_AUTH__MONGO__AUTH_QUERY__COLLECTION: "emqxauthrules" # Especifica la coleccion de la 
+      # base anterior (iotgl) donde estan las credenciales de los clientes que pueden 
+      # conectarse al broker
+      # Las siguientes lineas le dicen a emqx don en mongo encuentra super usuarios.
+      EMQX_AUTH__MONGO__SUPER_QUERY__COLLECTION: "emqxauthrules" #Indica la coleccion donde estan.
+      EMQX_AUTH__MONGO__SUPER_QUERY__SUPER_FIELD: "is_superuser" #Indica el campo que dice si es.
+      EMQX_AUTH__MONGO__SUPER_QUERY__SELECTOR: "username=%u"
+      EMQX_AUTH__MONGO__SUPER_QUERY: "off" #Apagamos la super query porque lo haremos de otra forma
+
+      EMQX_AUTH__MONGO__AUTH_QUERY__PASSWORD_HASH: plain #Indica nada esta encriptado texto plano.
+      EMQX_AUTH__MONGO__AUTH_QUERY__PASSWORD_FIELD: "password" # Indica el campo donde esta el PW.
+      EMQX_AUTH__MONGO__AUTH_QUERY__SELECTOR: "username=%u"
+
+       ## Enable ACL (lista de control de acceso) query.
+      #Access control list
+      EMQX_AUTH__MONGO__ACL_QUERY: "on" #Activa la lista de control de acceso.
+      EMQX_AUTH__MONGO__ACL_QUERY__COLLECTION: "emqxauthrules" # Especifica la coleccion endonde estan
+                                            #  los campos a los que se subscribe o publica.
+      EMQX_AUTH__MONGO__ACL_QUERY__SELECTOR: "username=%u" # Para saber con quien lo enlasa.
+      # Lista de plugins que quiero cargar por defecto para no estar dando estart.
+      EMQX_LOADED_PLUGINS: "emqx_recon,emqx_retainer,emqx_management,emqx_dashboard,emqx_auth_mongo"
+      # Plugins emqx_recon = reconeccion automatica, emqx_retainer= mensajes retenidos,
+      # emqx_management= Controla la API emqx, emqx_dashboard= levanta el dashboard,
+      # emqx_auth_mongo = autenticacion mongo.
+      #listener.tcp.external.max_connections
+      EMQX_LISTENER__TCP__EXTERNAL__MAX_CONNECTIONS: 1000
+ 

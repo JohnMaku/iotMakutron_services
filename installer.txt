@@ -1,0 +1,14 @@
+sudo apt-get update     
+wget https://get.docker.com/
+mv index.html install_docker.sh
+chmod  777 install_docker.sh
+./install_docker.sh
+ sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+ sudo chmod +x /usr/local/bin/docker-compose
+sudo rm install_docker.sh
+
+
+
+
+
+
